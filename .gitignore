@@ -1,0 +1,18 @@
+# Root level
+.DS_Store
+*.log
+
+# Backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/uploads/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+frontend/.env*.local
+
+# Docker
+.env.docker

@@ -1,0 +1,41 @@
+# ── docker-compose.yml — EC2 Production ──────────────────────────────────────
+# Runs on the EC2 machine.
+# MongoDB → Atlas (cloud), Email → Resend (cloud), Redis → local container.
+#
+# Setup on EC2:
+#   1. git clone <repo> && cd vedaAi
+#   2. cp backend/.env.example backend/.env  # fill in real secrets
+#   3. docker compose up -d
+
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: vedaai-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${DOCKERHUB_USERNAME:-yourdockerhubuser}/vedaai-backend:latest
+    container_name: vedaai-backend
+    restart: unless-stopped
+    ports:
+      - '5000:5000'
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+volumes:
+  redis_data:
