@@ -4,7 +4,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendOtpEmail = async (email: string, otp: string): Promise<void> => {
   const { error } = await resend.emails.send({
-    from: 'VedaAI <onboarding@resend.dev>',
+    from: 'VedaAI <noreply@rahulwanna.rocks>',
     to: email,
     subject: 'Your VedaAI Verification Code',
     html: `
