@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import { UploadApiResponse } from 'cloudinary';
+import cloudinary from '../config/cloudinary';
 import { Assignment } from '../models/Assignment';
 import { Result } from '../models/Result';
 import { getGenerationQueue } from '../config/bullmq';
@@ -10,18 +11,9 @@ import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Multer config for file uploads
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (_, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`);
-  },
-});
+// ─── Multer — memory storage (no disk writes) ─────────────────────────────────
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_, file, cb) => {
     const allowed = ['.pdf', '.txt', '.png', '.jpg', '.jpeg'];
@@ -31,20 +23,38 @@ const upload = multer({
   },
 });
 
-// Utility: extract text from uploaded file
-async function extractFileContent(filePath: string, mimetype: string): Promise<string> {
-  if (mimetype === 'application/pdf' || filePath.endsWith('.pdf')) {
+// ─── Utility: upload buffer to Cloudinary ─────────────────────────────────────
+function uploadToCloudinary(buffer: Buffer, originalname: string): Promise<UploadApiResponse> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        public_id: `vedaai/${Date.now()}-${originalname.replace(/\s+/g, '_').replace(/\.[^/.]+$/, '')}`,
+        resource_type: 'auto',
+        folder: 'vedaai',
+      },
+      (error, result) => {
+        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'));
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+// ─── Utility: extract text from file buffer ───────────────────────────────────
+async function extractFileContent(buffer: Buffer, mimetype: string, originalname: string): Promise<string> {
+  if (mimetype === 'application/pdf' || originalname.endsWith('.pdf')) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
-      const data = await pdfParse(fs.readFileSync(filePath));
+      const data = await pdfParse(buffer);
       return data.text.substring(0, 5000);
     } catch {
       return '';
     }
   }
-  if (mimetype === 'text/plain' || filePath.endsWith('.txt')) {
-    return fs.readFileSync(filePath, 'utf-8').substring(0, 5000);
+  if (mimetype === 'text/plain' || originalname.endsWith('.txt')) {
+    return buffer.toString('utf-8').substring(0, 5000);
   }
   return '';
 }
@@ -94,12 +104,13 @@ router.post('/', authMiddleware, upload.single('file'), async (req: Request, res
       }
     }
 
-    // Handle file upload
+    // Handle file upload → Cloudinary
     let fileUrl: string | undefined;
     let fileContent: string | undefined;
     if (req.file) {
-      fileUrl = `/uploads/${req.file.filename}`;
-      fileContent = await extractFileContent(req.file.path, req.file.mimetype);
+      const uploaded = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+      fileUrl = uploaded.secure_url;
+      fileContent = await extractFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
     }
 
     // Create assignment
