@@ -50,9 +50,9 @@ async function extractFileContent(filePath: string, mimetype: string): Promise<s
 }
 
 // ─── GET /api/assignments ────────────────────────────────────────────────────
-router.get('/', authMiddleware, async (_req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const assignments = await Assignment.find()
+    const assignments = await Assignment.find({ userId: req.user!.userId })
       .sort({ createdAt: -1 })
       .select('-fileContent');
     res.json({ success: true, data: assignments });
@@ -136,7 +136,10 @@ router.post('/', authMiddleware, upload.single('file'), async (req: Request, res
 // ─── GET /api/assignments/:id ────────────────────────────────────────────────
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const assignment = await Assignment.findById(req.params.id).select('-fileContent');
+    const assignment = await Assignment.findOne({
+      _id: req.params.id,
+      userId: req.user!.userId,
+    }).select('-fileContent');
     if (!assignment) {
       res.status(404).json({ success: false, error: 'Assignment not found' });
       return;
@@ -150,7 +153,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 // ─── DELETE /api/assignments/:id ─────────────────────────────────────────────
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const assignment = await Assignment.findByIdAndDelete(req.params.id);
+    const assignment = await Assignment.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user!.userId,
+    });
     if (!assignment) {
       res.status(404).json({ success: false, error: 'Assignment not found' });
       return;
@@ -197,7 +203,7 @@ router.get('/:id/result', authMiddleware, async (req: Request, res: Response) =>
 router.post('/:id/regenerate', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const assignment = await Assignment.findById(id);
+    const assignment = await Assignment.findOne({ _id: id, userId: req.user!.userId });
     if (!assignment) {
       res.status(404).json({ success: false, error: 'Assignment not found' });
       return;
